@@ -3,9 +3,23 @@ import { PlaceholderScreen } from '../lib/PlaceholderScreen';
 
 interface SettingsScreenProps {
   onLogout: () => void;
+  onProfilePress?: () => void;
+  onNotificationsPress?: () => void;
+  onSecurityPress?: () => void;
+  onLinkedAccountsPress?: () => void;
+  onHelpPress?: () => void;
+  onLegalPress?: () => void;
 }
 
-export function SettingsScreen({ onLogout }: SettingsScreenProps) {
+export function SettingsScreen({
+  onLogout,
+  onProfilePress,
+  onNotificationsPress,
+  onSecurityPress,
+  onLinkedAccountsPress,
+  onHelpPress,
+  onLegalPress,
+}: SettingsScreenProps) {
   return (
     <PlaceholderScreen
       title="Settings"
@@ -21,10 +35,13 @@ export function SettingsScreen({ onLogout }: SettingsScreenProps) {
         'Sign out button',
       ]}
       actions={[
-        {
-          label: 'Sign Out',
-          onPress: onLogout,
-        },
+        ...(onProfilePress ? [{ label: 'Profile', onPress: onProfilePress }] : []),
+        ...(onNotificationsPress ? [{ label: 'Notifications', onPress: onNotificationsPress }] : []),
+        ...(onSecurityPress ? [{ label: 'Security', onPress: onSecurityPress }] : []),
+        ...(onLinkedAccountsPress ? [{ label: 'Linked Accounts', onPress: onLinkedAccountsPress }] : []),
+        ...(onHelpPress ? [{ label: 'Help & Support', onPress: onHelpPress }] : []),
+        ...(onLegalPress ? [{ label: 'Legal', onPress: onLegalPress }] : []),
+        { label: 'Sign Out', onPress: onLogout },
       ]}
     />
   );

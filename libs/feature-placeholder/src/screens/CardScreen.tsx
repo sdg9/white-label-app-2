@@ -3,9 +3,17 @@ import { PlaceholderScreen } from '../lib/PlaceholderScreen';
 
 interface CardScreenProps {
   onCardControlsPress?: () => void;
+  onCardDetailsPress?: () => void;
+  onOrderPhysicalCardPress?: () => void;
+  onReportIssuePress?: () => void;
 }
 
-export function CardScreen({ onCardControlsPress }: CardScreenProps) {
+export function CardScreen({
+  onCardControlsPress,
+  onCardDetailsPress,
+  onOrderPhysicalCardPress,
+  onReportIssuePress,
+}: CardScreenProps) {
   return (
     <PlaceholderScreen
       title="Card"
@@ -21,10 +29,10 @@ export function CardScreen({ onCardControlsPress }: CardScreenProps) {
         'Order physical card option',
       ]}
       actions={[
-        {
-          label: 'Card Controls',
-          onPress: () => onCardControlsPress?.(),
-        },
+        ...(onCardDetailsPress ? [{ label: 'View Card Details', onPress: onCardDetailsPress }] : []),
+        ...(onCardControlsPress ? [{ label: 'Card Controls', onPress: onCardControlsPress }] : []),
+        ...(onOrderPhysicalCardPress ? [{ label: 'Order Physical Card', onPress: onOrderPhysicalCardPress }] : []),
+        ...(onReportIssuePress ? [{ label: 'Report Issue', onPress: onReportIssuePress }] : []),
       ]}
     />
   );

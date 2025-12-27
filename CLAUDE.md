@@ -11,3 +11,14 @@ The v1 application is located at `/Users/steven/dev/marqeta/white-label-app-nx` 
 - Prefer simplicity over flexibility
 - Question complexity inherited from v1
 - Only add abstractions when clearly needed
+
+## Navigation
+
+When creating new stack navigators, use `headerBackButtonDisplayMode: 'minimal'` in screenOptions to show only the back arrow (no title text):
+
+```tsx
+const MyStack = createNativeStackNavigator({
+  screenOptions: defaultStackScreenOptions, // defined in Navigation.tsx
+  screens: { ... }
+});
+```

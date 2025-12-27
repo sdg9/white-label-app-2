@@ -5,12 +5,20 @@ interface WalletScreenProps {
   onTransactionPress?: (txId: string) => void;
   onGasMapPress?: () => void;
   onATMPress?: () => void;
+  onAddFundsPress?: () => void;
+  onTransferPress?: () => void;
+  onRewardsPress?: () => void;
+  onDirectDepositPress?: () => void;
 }
 
 export function WalletScreen({
   onTransactionPress,
   onGasMapPress,
   onATMPress,
+  onAddFundsPress,
+  onTransferPress,
+  onRewardsPress,
+  onDirectDepositPress,
 }: WalletScreenProps) {
   return (
     <PlaceholderScreen
@@ -25,18 +33,16 @@ export function WalletScreen({
         'Backup balance status',
       ]}
       actions={[
+        ...(onAddFundsPress ? [{ label: 'Add Funds', onPress: onAddFundsPress }] : []),
+        ...(onTransferPress ? [{ label: 'Transfer', onPress: onTransferPress }] : []),
+        ...(onRewardsPress ? [{ label: 'Rewards', onPress: onRewardsPress }] : []),
+        ...(onDirectDepositPress ? [{ label: 'Direct Deposit', onPress: onDirectDepositPress }] : []),
         {
-          label: 'View Transaction Detail',
+          label: 'View Transaction',
           onPress: () => onTransactionPress?.('tx-mock-001'),
         },
-        {
-          label: 'Open Gas Map',
-          onPress: () => onGasMapPress?.(),
-        },
-        {
-          label: 'Find ATM',
-          onPress: () => onATMPress?.(),
-        },
+        ...(onGasMapPress ? [{ label: 'Gas Map', onPress: onGasMapPress }] : []),
+        ...(onATMPress ? [{ label: 'Find ATM', onPress: onATMPress }] : []),
       ]}
     />
   );

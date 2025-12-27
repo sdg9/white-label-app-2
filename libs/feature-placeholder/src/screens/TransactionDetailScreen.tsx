@@ -4,11 +4,13 @@ import { PlaceholderScreen } from '../lib/PlaceholderScreen';
 interface TransactionDetailScreenProps {
   txId: string;
   onBack?: () => void;
+  onReportIssue?: () => void;
 }
 
 export function TransactionDetailScreen({
   txId,
   onBack,
+  onReportIssue,
 }: TransactionDetailScreenProps) {
   return (
     <PlaceholderScreen
@@ -26,16 +28,10 @@ export function TransactionDetailScreen({
         'Receipt image (if available)',
         'Report issue button',
       ]}
-      actions={
-        onBack
-          ? [
-              {
-                label: 'Go Back',
-                onPress: onBack,
-              },
-            ]
-          : []
-      }
+      actions={[
+        ...(onReportIssue ? [{ label: 'Report Issue', onPress: onReportIssue }] : []),
+        ...(onBack ? [{ label: 'Go Back', onPress: onBack }] : []),
+      ]}
     />
   );
 }
