@@ -1,0 +1,46 @@
+# Smoke Test: Login and Verify Wallet Tab
+#
+# This smoke test validates:
+# - App launches successfully
+# - Login flow works (if on login screen)
+# - Wallet tab is accessible and displayed
+#
+# Prerequisites:
+#   1. iOS simulator booted (e.g., iPhone 16)
+#   2. Target app installed and running
+#   3. Metro bundler connected
+#
+# Run:
+#   maestro test .maestro/smoke-test.yaml
+
+appId: com.steveng9.app-uber
+
+---
+# Step 1: Launch the app
+- launchApp:
+    clearState: false
+
+# Step 2: Wait for app to load, then handle login if needed
+# Check if we're on login screen (Login title visible)
+- runFlow:
+    when:
+      visible: 'Login'
+    commands:
+      # Tap the Sign In button to log in
+      - tapOn: 'Sign In (Mock)'
+      # Wait for Wallet screen to appear
+      - extendedWaitUntil:
+          visible:
+            text: 'Wallet'
+          timeout: 15000
+
+# Step 3: Verify we're on the Wallet tab
+# The Wallet screen should be visible (either after login or if already logged in)
+- extendedWaitUntil:
+    visible:
+      text: 'Wallet'
+    timeout: 10000
+
+# Step 4: Assert we see the Wallet screen content
+- assertVisible: 'Wallet'
+- assertVisible: 'Your Uber Pro Card balance and recent activity'

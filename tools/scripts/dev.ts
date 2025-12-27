@@ -9,7 +9,7 @@
  *   pnpm dev
  */
 
-import { select } from '@inquirer/prompts';
+import { select, checkbox } from '@inquirer/prompts';
 import { spawn, execSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -94,6 +94,8 @@ const LOCAL_BUILD_ENV = {
   SENTRY_DISABLE_AUTO_UPLOAD: 'true',
 };
 
+type RootAction = 'app-dev' | 'maestro';
+
 type ExpoAction =
   | 'start-packager'
   | 'start-packager-clean'
@@ -102,10 +104,236 @@ type ExpoAction =
   | 'build-android'
   | 'build-android-clean';
 
+/**
+ * Check if Maestro is installed
+ */
+function isMaestroInstalled(): boolean {
+  try {
+    execSync('which maestro', {
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Get the UDID of the booted iOS simulator
+ */
+function getBootedSimulatorUdid(): string | null {
+  try {
+    const output = execSync('xcrun simctl list devices booted', {
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    // Extract UUID pattern from output
+    const match = output.match(/\(([A-F0-9-]{36})\)/);
+    return match ? match[1] : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Discover Maestro test files in the .maestro directory
+ */
+function discoverMaestroTests(): Array<{ name: string; path: string; description: string }> {
+  const maestroDir = path.join(WORKSPACE_ROOT, '.maestro');
+  if (!fs.existsSync(maestroDir)) return [];
+
+  const tests: Array<{ name: string; path: string; description: string }> = [];
+
+  function scanDirectory(dir: string, prefix = ''): void {
+    const entries = fs.readdirSync(dir);
+
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry);
+      const relativePath = path.relative(WORKSPACE_ROOT, fullPath);
+      const stat = fs.statSync(fullPath);
+
+      if (stat.isDirectory()) {
+        // Skip certain directories
+        if (['screenshots', 'profiles', 'flows'].includes(entry)) continue;
+        scanDirectory(fullPath, prefix ? `${prefix}/${entry}` : entry);
+      } else if (entry.endsWith('.yaml') || entry.endsWith('.yml')) {
+        // Read file to extract description from comments
+        let description = '';
+        try {
+          const content = fs.readFileSync(fullPath, 'utf-8');
+          const lines = content.split('\n');
+          for (const line of lines) {
+            if (line.startsWith('#') && !line.startsWith('#!')) {
+              const comment = line.replace(/^#\s*/, '').trim();
+              if (comment && !comment.startsWith('@') && comment.length > 10) {
+                description = comment;
+                break;
+              }
+            }
+          }
+        } catch {
+          // Ignore read errors
+        }
+
+        // Create a friendly name from the filename
+        const name = entry
+          .replace(/\.(yaml|yml)$/, '')
+          .split('-')
+          .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+          .join(' ');
+
+        const displayName = prefix ? `${prefix}/${name}` : name;
+
+        tests.push({
+          name: displayName,
+          path: relativePath,
+          description: description || `Run ${relativePath}`,
+        });
+      }
+    }
+  }
+
+  scanDirectory(maestroDir);
+  return tests;
+}
+
+/**
+ * Get bundle identifier for an Expo app
+ */
+function getBundleId(appName: string): string {
+  const appJsonPath = path.join(WORKSPACE_ROOT, 'apps', appName, 'app.json');
+  try {
+    const appJson = JSON.parse(fs.readFileSync(appJsonPath, 'utf-8'));
+    return appJson.expo?.ios?.bundleIdentifier || `com.example.${appName.replace(/-/g, '')}`;
+  } catch {
+    return `com.example.${appName.replace(/-/g, '')}`;
+  }
+}
+
+/**
+ * Handle Maestro E2E testing flow
+ */
+async function handleMaestroTests(): Promise<void> {
+  // Check if Maestro is installed
+  if (!isMaestroInstalled()) {
+    console.log(`${colors.red}Maestro is not installed.${colors.reset}`);
+    console.log(
+      `${colors.dim}Install with: curl -Ls "https://get.maestro.mobile.dev" | bash${colors.reset}`
+    );
+    console.log(
+      `${colors.dim}Or via Homebrew: brew install maestro${colors.reset}\n`
+    );
+    return;
+  }
+
+  // Check for booted simulator
+  const udid = getBootedSimulatorUdid();
+  if (!udid) {
+    console.log(`${colors.yellow}No iOS simulator is running.${colors.reset}`);
+    console.log(`${colors.dim}Start a simulator first, then try again.${colors.reset}\n`);
+    return;
+  }
+
+  // Discover available tests
+  const tests = discoverMaestroTests();
+  if (tests.length === 0) {
+    console.log(`${colors.yellow}No Maestro tests found in .maestro directory.${colors.reset}\n`);
+    return;
+  }
+
+  console.log(`${colors.green}Found ${tests.length} Maestro test(s)${colors.reset}`);
+  console.log(`${colors.dim}Simulator UDID: ${udid}${colors.reset}\n`);
+
+  // Let user select tests to run
+  const selectedTests = await checkbox({
+    message: 'Select tests to run (space to select, enter to confirm):',
+    choices: tests.map((test) => ({
+      name: `${test.name} ${colors.dim}- ${test.description}${colors.reset}`,
+      value: test,
+    })),
+  });
+
+  if (selectedTests.length === 0) {
+    console.log(`${colors.yellow}No tests selected.${colors.reset}\n`);
+    return;
+  }
+
+  // Run selected tests
+  console.log(
+    `\n${colors.cyan}Running ${selectedTests.length} Maestro test(s)${colors.reset}\n`
+  );
+
+  const results: Array<{ name: string; passed: boolean }> = [];
+  const overallStartTime = Date.now();
+
+  for (let i = 0; i < selectedTests.length; i++) {
+    const test = selectedTests[i];
+    console.log(
+      `\n${colors.bold}[${i + 1}/${selectedTests.length}] ${test.name}${colors.reset}`
+    );
+    console.log(`${colors.dim}Path: ${test.path}${colors.reset}\n`);
+
+    const startTime = Date.now();
+    const exitCode = await runCommand('maestro', ['--udid', udid, 'test', test.path]);
+    const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+
+    const passed = exitCode === 0;
+    results.push({ name: test.name, passed });
+
+    if (passed) {
+      console.log(
+        `\n${colors.green}✓ ${test.name} passed${colors.reset} ${colors.dim}(${duration}s)${colors.reset}`
+      );
+    } else {
+      console.log(
+        `\n${colors.red}✗ ${test.name} failed${colors.reset} ${colors.dim}(${duration}s)${colors.reset}`
+      );
+    }
+  }
+
+  // Summary
+  const overallDuration = ((Date.now() - overallStartTime) / 1000).toFixed(1);
+  const passed = results.filter((r) => r.passed).length;
+  const failed = results.filter((r) => !r.passed).length;
+
+  console.log(`\n${colors.bold}Test Summary${colors.reset}`);
+  console.log(`${colors.dim}${'─'.repeat(40)}${colors.reset}`);
+
+  for (const result of results) {
+    const icon = result.passed ? colors.green + '✓' : colors.red + '✗';
+    console.log(`${icon} ${result.name}${colors.reset}`);
+  }
+
+  console.log(`${colors.dim}${'─'.repeat(40)}${colors.reset}`);
+  console.log(
+    `${colors.dim}Total: ${passed} passed, ${failed} failed (${overallDuration}s)${colors.reset}\n`
+  );
+}
+
 type AstroAction = 'dev' | 'build' | 'preview';
 
 async function main(): Promise<void> {
   console.log(`\n${colors.bold}${colors.cyan}Dev CLI${colors.reset}\n`);
+
+  // Check if there are Maestro tests available
+  const hasMaestroTests = fs.existsSync(path.join(WORKSPACE_ROOT, '.maestro'));
+
+  // Root menu: choose between app development and Maestro tests
+  const rootAction = await select<RootAction>({
+    message: 'What do you want to do?',
+    choices: [
+      { name: 'App development', value: 'app-dev' },
+      ...(hasMaestroTests
+        ? [{ name: 'Run Maestro E2E tests', value: 'maestro' as const }]
+        : []),
+    ],
+  });
+
+  if (rootAction === 'maestro') {
+    await handleMaestroTests();
+    return;
+  }
 
   const apps = getAvailableApps();
 
