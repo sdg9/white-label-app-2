@@ -71,7 +71,14 @@ useEffect(() => {
 
 ## Async Routing with Router Screens
 
-Sometimes you need to make an async decision (API call, feature flag check, etc.) before knowing which screen to show. Two factory functions enable this pattern.
+Sometimes you need to make an async decision (API call, feature flag check, etc.) before knowing which screen to show. The `@wla/platform-navigation` library provides two factory functions for this pattern.
+
+```tsx
+import {
+  createRouterScreen,
+  createRouterScreenFromHook,
+} from '@wla/platform-navigation';
+```
 
 ### The Problem
 
@@ -175,9 +182,15 @@ const CheckoutRouter = createRouterScreenFromHook(useCheckoutDecision);
 
 ### Register in your stack
 
-Use the attached `screenOptions`:
+Each router component has a `screenOptions` property attached. Use it when registering the screen:
 
 ```tsx
+import { createRouterScreen } from '@wla/platform-navigation';
+
+const CheckoutRouter = createRouterScreen(async ({ cartId }) => {
+  // ... decision logic
+});
+
 const MyStack = createNativeStackNavigator({
   screens: {
     // Entry point - transparent overlay, no animation
@@ -203,11 +216,17 @@ const MyStack = createNativeStackNavigator({
 The factory attaches recommended options as a static property:
 
 ```tsx
-Screen.screenOptions = {
+RouterScreen.screenOptions = {
   presentation: 'transparentModal',  // Overlay, don't push
   headerShown: false,                // No header during loading
   animation: 'none',                 // Appear instantly
 };
+```
+
+You can also import `routerScreenOptions` directly if needed:
+
+```tsx
+import { routerScreenOptions } from '@wla/platform-navigation';
 ```
 
 This ensures the router overlays the current screen transparently, then the destination animates in normally (modal slide-up or stack push).

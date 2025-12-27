@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Platform, View, ActivityIndicator, Alert } from 'react-native';
+import { Platform } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import {
@@ -28,166 +28,11 @@ import {
   useAuth,
 } from '../context/AuthContext';
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// ROUTER SCREEN FACTORIES
-// ═══════════════════════════════════════════════════════════════════════════════
-
-type RouterScreenOptions = {
-  presentation: 'transparentModal';
-  headerShown: false;
-  animation: 'none';
-};
-
-type RouterScreenComponent = React.FC & {
-  screenOptions: RouterScreenOptions;
-};
-
-const routerScreenOptions: RouterScreenOptions = {
-  presentation: 'transparentModal',
-  headerShown: false,
-  animation: 'none',
-};
-
-/**
- * Creates a router screen from an async decision function.
- * This is the preferred approach for simple async routing decisions.
- *
- * @example
- * const CheckoutRouter = createRouterScreen(async ({ cartId }) => {
- *   const result = await api.checkEligibility(cartId);
- *   return {
- *     destination: result.approved ? 'CheckoutForm' : 'CheckoutBlocked',
- *     destinationParams: { cartId },
- *   };
- * });
- */
-function createRouterScreen<TParams extends object>(
-  decide: (params: TParams) => Promise<{
-    destination: string;
-    destinationParams?: object;
-  }>,
-): RouterScreenComponent {
-  const Screen: RouterScreenComponent = function RouterScreen() {
-    const navigation = useNavigation<any>();
-    const route = useRoute<any>();
-    const [error, setError] = useState<string | null>(null);
-
-    useEffect(() => {
-      let cancelled = false;
-
-      decide(route.params ?? {})
-        .then(({ destination, destinationParams }) => {
-          if (!cancelled) {
-            navigation.replace(destination, destinationParams);
-          }
-        })
-        .catch((err) => {
-          if (!cancelled) {
-            const message =
-              err instanceof Error
-                ? err.message
-                : String(err) || 'Something went wrong';
-            setError(message);
-          }
-        });
-
-      return () => {
-        cancelled = true;
-      };
-    }, [navigation, route.params]);
-
-    if (error) {
-      Alert.alert('Oops', error, [
-        { text: 'OK', onPress: () => navigation.goBack() },
-      ]);
-      return null;
-    }
-
-    return (
-      <View
-        style={{
-          flex: 1,
-          justifyContent: 'center',
-          alignItems: 'center',
-          backgroundColor: 'rgba(0,0,0,0.3)',
-        }}
-      >
-        <ActivityIndicator size="large" color="#fff" />
-      </View>
-    );
-  };
-
-  Screen.screenOptions = routerScreenOptions;
-  return Screen;
-}
-
-/**
- * Creates a router screen from a React hook.
- * Use this when you need access to React context or complex state logic.
- *
- * @example
- * function useMyDecision(params: { id: string }) {
- *   const { user } = useAuth(); // Can use hooks!
- *   const [state, setState] = useState({ isLoading: true, destination: '' });
- *
- *   useEffect(() => {
- *     // Complex logic using hooks...
- *   }, [params.id, user.role]);
- *
- *   return state;
- * }
- *
- * const MyRouter = createRouterScreenFromHook(useMyDecision);
- */
-function createRouterScreenFromHook<TParams extends object>(
-  useDecision: (params: TParams) => {
-    isLoading: boolean;
-    destination?: string;
-    destinationParams?: object;
-    error?: string | Error;
-  },
-): RouterScreenComponent {
-  const Screen: RouterScreenComponent = function RouterScreen() {
-    const navigation = useNavigation<any>();
-    const route = useRoute<any>();
-    const { isLoading, destination, destinationParams, error } = useDecision(
-      route.params ?? {},
-    );
-
-    useEffect(() => {
-      if (!isLoading) {
-        if (error) {
-          const message = typeof error === 'string' ? error : error.message;
-          Alert.alert('Oops', message || 'Something went wrong', [
-            { text: 'OK', onPress: () => navigation.goBack() },
-          ]);
-        } else if (destination) {
-          navigation.replace(destination, destinationParams);
-        }
-      }
-    }, [isLoading, destination, destinationParams, error, navigation]);
-
-    if (error) {
-      return null;
-    }
-
-    return (
-      <View
-        style={{
-          flex: 1,
-          justifyContent: 'center',
-          alignItems: 'center',
-          backgroundColor: 'rgba(0,0,0,0.3)',
-        }}
-      >
-        <ActivityIndicator size="large" color="#fff" />
-      </View>
-    );
-  };
-
-  Screen.screenOptions = routerScreenOptions;
-  return Screen;
-}
+// Router screen factories
+import {
+  createRouterScreen,
+  createRouterScreenFromHook,
+} from '@wla/platform-navigation';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SCREEN WRAPPERS (connect placeholder screens to navigation)
