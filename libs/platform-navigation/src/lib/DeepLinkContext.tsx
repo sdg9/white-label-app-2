@@ -85,14 +85,20 @@ export function DeepLinkProvider({
   const [pendingUrl, setPendingUrl] = useState<string | null>(null);
   const isAuthenticatedRef = useRef(isAuthenticated);
   const pendingUrlRef = useRef<string | null>(null);
+  // Track URLs that have been handled to prevent re-processing
+  const handledUrlsRef = useRef<Set<string>>(new Set());
 
   // Keep refs in sync
   isAuthenticatedRef.current = isAuthenticated;
   pendingUrlRef.current = pendingUrl;
 
   // Consume and clear the pending URL - stable reference using ref
+  // Also marks the URL as handled to prevent re-processing on subsequent logins
   const consumePendingUrl = useCallback(() => {
     const url = pendingUrlRef.current;
+    if (url) {
+      handledUrlsRef.current.add(url);
+    }
     setPendingUrl(null);
     pendingUrlRef.current = null;
     return url;
@@ -109,6 +115,12 @@ export function DeepLinkProvider({
       if (url) {
         console.log('[DeepLink] Initial URL:', url);
 
+        // Skip if already handled (prevents re-processing on subsequent logins)
+        if (handledUrlsRef.current.has(url)) {
+          console.log('[DeepLink] URL already handled, skipping');
+          return null;
+        }
+
         if (!isAuthenticatedRef.current) {
           console.log('[DeepLink] User not authenticated, storing URL for later');
           setPendingUrl(url);
@@ -124,6 +136,8 @@ export function DeepLinkProvider({
     },
 
     // Custom subscribe - intercept URLs when not authenticated
+    // Note: Unlike getInitialURL, we don't check handledUrlsRef here because
+    // runtime deep links (from notifications, other apps) are always new intentional clicks
     subscribe(listener: (url: string) => void) {
       const subscription = Linking.addEventListener('url', ({ url }) => {
         console.log('[DeepLink] Received URL:', url);
