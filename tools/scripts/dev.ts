@@ -94,7 +94,132 @@ const LOCAL_BUILD_ENV = {
   SENTRY_DISABLE_AUTO_UPLOAD: 'true',
 };
 
-type RootAction = 'app-dev' | 'maestro';
+type RootAction = 'app-dev' | 'maestro' | 'status-checks';
+
+/**
+ * Status check types
+ */
+type StatusCheck = 'typecheck' | 'lint' | 'test' | 'all';
+
+/**
+ * Run a status check command and display results
+ */
+async function runStatusCheck(
+  name: string,
+  command: string,
+  args: string[]
+): Promise<boolean> {
+  console.log(`\n${colors.cyan}Running ${name}...${colors.reset}\n`);
+  const startTime = Date.now();
+
+  const exitCode = await runCommand(command, args);
+  const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+
+  if (exitCode === 0) {
+    console.log(
+      `\n${colors.green}✓ ${name} passed${colors.reset} ${colors.dim}(${duration}s)${colors.reset}\n`
+    );
+    return true;
+  } else {
+    console.log(
+      `\n${colors.red}✗ ${name} failed${colors.reset} ${colors.dim}(${duration}s)${colors.reset}\n`
+    );
+    return false;
+  }
+}
+
+/**
+ * Handle status checks flow
+ */
+async function handleStatusChecks(): Promise<void> {
+  setTabTitle('Status Checks');
+
+  const checkType = await select<StatusCheck>({
+    message: 'What do you want to check?',
+    choices: [
+      { name: 'TypeScript', value: 'typecheck' },
+      { name: 'Lint', value: 'lint' },
+      { name: 'Tests', value: 'test' },
+      { name: 'All checks', value: 'all' },
+    ],
+  });
+
+  const checks: Array<{ name: string; command: string; args: string[] }> = [];
+
+  switch (checkType) {
+    case 'typecheck':
+      checks.push({
+        name: 'TypeScript',
+        command: 'pnpm',
+        args: ['tsc', '-p', 'tsconfig.typecheck.json', '--noEmit'],
+      });
+      break;
+    case 'lint':
+      checks.push({
+        name: 'ESLint',
+        command: 'pnpm',
+        args: ['nx', 'run-many', '--target=lint', '--all'],
+      });
+      break;
+    case 'test':
+      checks.push({
+        name: 'Jest',
+        command: 'pnpm',
+        args: ['nx', 'run-many', '--target=test', '--all', '--passWithNoTests'],
+      });
+      break;
+    case 'all':
+      checks.push(
+        {
+          name: 'TypeScript',
+          command: 'pnpm',
+          args: ['tsc', '-p', 'tsconfig.typecheck.json', '--noEmit'],
+        },
+        {
+          name: 'ESLint',
+          command: 'pnpm',
+          args: ['nx', 'run-many', '--target=lint', '--all'],
+        },
+        {
+          name: 'Jest',
+          command: 'pnpm',
+          args: ['nx', 'run-many', '--target=test', '--all', '--passWithNoTests'],
+        }
+      );
+      break;
+  }
+
+  console.log(`\n${colors.bold}${colors.cyan}Status Checks${colors.reset}`);
+  console.log(
+    `${colors.dim}Running ${checks.length} check(s)...${colors.reset}\n`
+  );
+
+  const results: Array<{ name: string; passed: boolean }> = [];
+  const overallStartTime = Date.now();
+
+  for (const check of checks) {
+    const passed = await runStatusCheck(check.name, check.command, check.args);
+    results.push({ name: check.name, passed });
+  }
+
+  // Summary
+  const overallDuration = ((Date.now() - overallStartTime) / 1000).toFixed(1);
+  const passed = results.filter((r) => r.passed).length;
+  const failed = results.filter((r) => !r.passed).length;
+
+  console.log(`\n${colors.bold}Summary${colors.reset}`);
+  console.log(`${colors.dim}${'─'.repeat(40)}${colors.reset}`);
+
+  for (const result of results) {
+    const icon = result.passed ? colors.green + '✓' : colors.red + '✗';
+    console.log(`${icon} ${result.name}${colors.reset}`);
+  }
+
+  console.log(`${colors.dim}${'─'.repeat(40)}${colors.reset}`);
+  console.log(
+    `${colors.dim}Total: ${passed} passed, ${failed} failed (${overallDuration}s)${colors.reset}\n`
+  );
+}
 
 type ExpoAction =
   | 'start-packager'
@@ -319,11 +444,12 @@ async function main(): Promise<void> {
   // Check if there are Maestro tests available
   const hasMaestroTests = fs.existsSync(path.join(WORKSPACE_ROOT, '.maestro'));
 
-  // Root menu: choose between app development and Maestro tests
+  // Root menu: choose between app development, Maestro tests, and status checks
   const rootAction = await select<RootAction>({
     message: 'What do you want to do?',
     choices: [
       { name: 'App development', value: 'app-dev' },
+      { name: 'Status checks', value: 'status-checks' },
       ...(hasMaestroTests
         ? [{ name: 'Run Maestro E2E tests', value: 'maestro' as const }]
         : []),
@@ -332,6 +458,11 @@ async function main(): Promise<void> {
 
   if (rootAction === 'maestro') {
     await handleMaestroTests();
+    return;
+  }
+
+  if (rootAction === 'status-checks') {
+    await handleStatusChecks();
     return;
   }
 

@@ -3,7 +3,7 @@
   "$schema": "../../node_modules/nx/schemas/project-schema.json",
   "sourceRoot": "libs/platform-navigation/src",
   "projectType": "library",
-  "tags": [],
+  "tags": ["scope:platform"],
   "// targets": "to see all targets run: nx show project platform-navigation --web",
   "targets": {}
 }
