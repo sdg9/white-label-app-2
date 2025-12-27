@@ -1,5 +1,5 @@
-import React from 'react';
-import { Platform } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { Platform, View, ActivityIndicator } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import {
@@ -22,7 +22,59 @@ import {
 } from '@wla/feature-placeholder';
 
 // Auth hooks
-import { useIsAuthenticated, useIsGuest, useAuth } from '../context/AuthContext';
+import {
+  useIsAuthenticated,
+  useIsGuest,
+  useAuth,
+} from '../context/AuthContext';
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ROUTER SCREEN FACTORY
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function createRouterScreen<TParams extends object>(
+  useDecision: (params: TParams) => {
+    isLoading: boolean;
+    destination: string;
+    destinationParams?: object;
+  },
+) {
+  const Screen = function RouterScreen() {
+    const navigation = useNavigation<any>();
+    const route = useRoute<any>();
+    const { isLoading, destination, destinationParams } = useDecision(
+      route.params ?? {},
+    );
+
+    useEffect(() => {
+      if (!isLoading && destination) {
+        navigation.replace(destination, destinationParams);
+      }
+    }, [isLoading, destination, destinationParams, navigation]);
+
+    return (
+      <View
+        style={{
+          flex: 1,
+          justifyContent: 'center',
+          alignItems: 'center',
+          backgroundColor: 'rgba(0,0,0,0.3)',
+        }}
+      >
+        <ActivityIndicator size="large" color="#fff" />
+      </View>
+    );
+  };
+
+  // Attach recommended options as a static property
+  Screen.screenOptions = {
+    presentation: 'transparentModal' as const,
+    headerShown: false,
+    animation: 'none' as const,
+  };
+
+  return Screen;
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // SCREEN WRAPPERS (connect placeholder screens to navigation)
@@ -88,6 +140,36 @@ function GasMapWrapper() {
   return <GasMapScreen onClose={() => navigation.goBack()} />;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// GAS MAP ROUTER (async decision -> A or B)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function useGasMapDecision() {
+  const [state, setState] = useState({ isLoading: true, destination: '' });
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const destination = Math.random() > 0.5 ? 'GasMapA' : 'GasMapB';
+      setState({ isLoading: false, destination });
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  return state;
+}
+
+const GasMapRouter = createRouterScreen(useGasMapDecision);
+
+function GasMapAWrapper() {
+  const navigation = useNavigation<any>();
+  return <GasMapScreen onClose={() => navigation.goBack()} />;
+}
+
+function GasMapBWrapper() {
+  const navigation = useNavigation<any>();
+  return <GasMapScreen onClose={() => navigation.goBack()} />;
+}
+
 function ATMLocatorWrapper() {
   const navigation = useNavigation<any>();
   return <ATMLocatorScreen onClose={() => navigation.goBack()} />;
@@ -101,7 +183,7 @@ function ATMLocatorWrapper() {
 const createTabIcon = (
   sfSymbol: string,
   sfSymbolFilled: string,
-  androidDrawable: string
+  androidDrawable: string,
 ) =>
   Platform.select({
     ios: ({ focused }: { focused: boolean }) => ({
@@ -116,7 +198,11 @@ const createTabIcon = (
 
 const tabIcons = {
   wallet: createTabIcon('creditcard', 'creditcard.fill', 'ic_wallet'),
-  activity: createTabIcon('list.bullet.rectangle', 'list.bullet.rectangle.fill', 'ic_list'),
+  activity: createTabIcon(
+    'list.bullet.rectangle',
+    'list.bullet.rectangle.fill',
+    'ic_list',
+  ),
   card: createTabIcon('creditcard', 'creditcard.fill', 'ic_card'),
   settings: createTabIcon('gearshape', 'gearshape.fill', 'ic_settings'),
 };
@@ -284,13 +370,25 @@ const RootStack = createNativeStackNavigator({
         },
         // Root-level modals (accessible from any tab)
         GasMap: {
-          screen: GasMapWrapper,
+          screen: GasMapRouter,
+          options: GasMapRouter.screenOptions,
+          linking: 'gas-map',
+        },
+        GasMapA: {
+          screen: GasMapAWrapper,
           options: {
             presentation: 'modal',
             headerShown: true,
-            title: 'Gas Stations',
+            title: 'Gas Stations A',
           },
-          linking: 'gas-map',
+        },
+        GasMapB: {
+          screen: GasMapBWrapper,
+          options: {
+            presentation: 'modal',
+            headerShown: true,
+            title: 'Gas Stations B',
+          },
         },
         ATMLocator: {
           screen: ATMLocatorWrapper,
