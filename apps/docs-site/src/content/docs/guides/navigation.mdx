@@ -1,0 +1,90 @@
+---
+title: Navigation
+description: Navigation architecture and patterns for the White Label App.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+## Overview
+
+TODO: Document overall navigation architecture.
+
+## Static Navigation API
+
+TODO: Document use of React Navigation's static API with `createStaticNavigation`.
+
+## Auth-Gated Screens
+
+TODO: Document conditional screen groups with `if: useIsAuthenticated`.
+
+## Deep Linking
+
+The app supports deep links for navigating directly to specific screens. Deep links work differently depending on whether the user is authenticated.
+
+### The Problem
+
+When a user taps a deep link (e.g., from a push notification) while logged out:
+
+1. The app opens to the Login screen (correct behavior)
+2. React Navigation tries to navigate to the deep link target
+3. Navigation fails because authenticated screens don't exist yet
+4. User logs in but lands on the default screen, losing their intended destination
+
+### Solution: Deferred Deep Links
+
+We use a custom `DeepLinkProvider` that intercepts deep links and stores them when the user is not authenticated. After login, the stored URL is replayed.
+
+```tsx
+// In App.tsx
+<DeepLinkProvider isAuthenticated={isAuthenticated} prefixes={['myapp://']}>
+  <Navigation linking={useLinkingConfig()} />
+</DeepLinkProvider>
+```
+
+The provider works by:
+1. Providing custom `getInitialURL` and `subscribe` functions to React Navigation's linking config
+2. When unauthenticated: storing the URL and returning `null` to prevent navigation
+3. When authenticated: passing URLs through normally
+4. After login: the stored URL is replayed via manual navigation
+
+<Aside type="note" title="Why not UNSTABLE_routeNamesChangeBehavior?">
+React Navigation has a built-in option `UNSTABLE_routeNamesChangeBehavior: 'lastUnhandled'` that's supposed to handle this automatically. However, it doesn't work with the static API + conditional groups pattern (`createStaticNavigation` with `if:` groups). We tested this and deep links were not replayed after authentication.
+</Aside>
+
+### Replay Logic
+
+After authentication, a `useEffect` watches for the auth state change and replays the pending URL:
+
+```tsx
+useEffect(() => {
+  const justAuthenticated = isAuthenticated && !wasAuthenticated.current;
+
+  if (justAuthenticated && pendingUrl) {
+    const url = consumePendingUrl();
+    // Small delay to ensure navigation state has updated
+    setTimeout(() => {
+      navigationRef.current.navigate(parseUrl(url));
+    }, 500);
+  }
+}, [isAuthenticated]);
+```
+
+### Supported Deep Links
+
+| Path | Destination |
+|------|-------------|
+| `/wallet` | Wallet tab |
+| `/wallet/transaction/:txId` | Transaction detail |
+| `/activity` | Activity tab |
+| `/card` | Card tab |
+| `/settings` | Settings tab |
+| `/gas-map` | Gas stations modal |
+| `/atm` | ATM locator modal |
+
+## Tab Navigation
+
+TODO: Document bottom tab structure.
+
+## Modal Presentation
+
+TODO: Document root-level modals.
