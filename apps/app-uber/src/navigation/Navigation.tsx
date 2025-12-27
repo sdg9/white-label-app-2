@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Platform, View, ActivityIndicator } from 'react-native';
+import { Platform, View, ActivityIndicator, Alert } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import {
@@ -29,28 +29,79 @@ import {
 } from '../context/AuthContext';
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// ROUTER SCREEN FACTORY
+// ROUTER SCREEN FACTORIES
 // ═══════════════════════════════════════════════════════════════════════════════
 
+type RouterScreenOptions = {
+  presentation: 'transparentModal';
+  headerShown: false;
+  animation: 'none';
+};
+
+type RouterScreenComponent = React.FC & {
+  screenOptions: RouterScreenOptions;
+};
+
+const routerScreenOptions: RouterScreenOptions = {
+  presentation: 'transparentModal',
+  headerShown: false,
+  animation: 'none',
+};
+
+/**
+ * Creates a router screen from an async decision function.
+ * This is the preferred approach for simple async routing decisions.
+ *
+ * @example
+ * const CheckoutRouter = createRouterScreen(async ({ cartId }) => {
+ *   const result = await api.checkEligibility(cartId);
+ *   return {
+ *     destination: result.approved ? 'CheckoutForm' : 'CheckoutBlocked',
+ *     destinationParams: { cartId },
+ *   };
+ * });
+ */
 function createRouterScreen<TParams extends object>(
-  useDecision: (params: TParams) => {
-    isLoading: boolean;
+  decide: (params: TParams) => Promise<{
     destination: string;
     destinationParams?: object;
-  },
-) {
-  const Screen = function RouterScreen() {
+  }>,
+): RouterScreenComponent {
+  const Screen: RouterScreenComponent = function RouterScreen() {
     const navigation = useNavigation<any>();
     const route = useRoute<any>();
-    const { isLoading, destination, destinationParams } = useDecision(
-      route.params ?? {},
-    );
+    const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
-      if (!isLoading && destination) {
-        navigation.replace(destination, destinationParams);
-      }
-    }, [isLoading, destination, destinationParams, navigation]);
+      let cancelled = false;
+
+      decide(route.params ?? {})
+        .then(({ destination, destinationParams }) => {
+          if (!cancelled) {
+            navigation.replace(destination, destinationParams);
+          }
+        })
+        .catch((err) => {
+          if (!cancelled) {
+            const message =
+              err instanceof Error
+                ? err.message
+                : String(err) || 'Something went wrong';
+            setError(message);
+          }
+        });
+
+      return () => {
+        cancelled = true;
+      };
+    }, [navigation, route.params]);
+
+    if (error) {
+      Alert.alert('Oops', error, [
+        { text: 'OK', onPress: () => navigation.goBack() },
+      ]);
+      return null;
+    }
 
     return (
       <View
@@ -66,13 +117,75 @@ function createRouterScreen<TParams extends object>(
     );
   };
 
-  // Attach recommended options as a static property
-  Screen.screenOptions = {
-    presentation: 'transparentModal' as const,
-    headerShown: false,
-    animation: 'none' as const,
+  Screen.screenOptions = routerScreenOptions;
+  return Screen;
+}
+
+/**
+ * Creates a router screen from a React hook.
+ * Use this when you need access to React context or complex state logic.
+ *
+ * @example
+ * function useMyDecision(params: { id: string }) {
+ *   const { user } = useAuth(); // Can use hooks!
+ *   const [state, setState] = useState({ isLoading: true, destination: '' });
+ *
+ *   useEffect(() => {
+ *     // Complex logic using hooks...
+ *   }, [params.id, user.role]);
+ *
+ *   return state;
+ * }
+ *
+ * const MyRouter = createRouterScreenFromHook(useMyDecision);
+ */
+function createRouterScreenFromHook<TParams extends object>(
+  useDecision: (params: TParams) => {
+    isLoading: boolean;
+    destination?: string;
+    destinationParams?: object;
+    error?: string | Error;
+  },
+): RouterScreenComponent {
+  const Screen: RouterScreenComponent = function RouterScreen() {
+    const navigation = useNavigation<any>();
+    const route = useRoute<any>();
+    const { isLoading, destination, destinationParams, error } = useDecision(
+      route.params ?? {},
+    );
+
+    useEffect(() => {
+      if (!isLoading) {
+        if (error) {
+          const message = typeof error === 'string' ? error : error.message;
+          Alert.alert('Oops', message || 'Something went wrong', [
+            { text: 'OK', onPress: () => navigation.goBack() },
+          ]);
+        } else if (destination) {
+          navigation.replace(destination, destinationParams);
+        }
+      }
+    }, [isLoading, destination, destinationParams, error, navigation]);
+
+    if (error) {
+      return null;
+    }
+
+    return (
+      <View
+        style={{
+          flex: 1,
+          justifyContent: 'center',
+          alignItems: 'center',
+          backgroundColor: 'rgba(0,0,0,0.3)',
+        }}
+      >
+        <ActivityIndicator size="large" color="#fff" />
+      </View>
+    );
   };
 
+  Screen.screenOptions = routerScreenOptions;
   return Screen;
 }
 
@@ -141,10 +254,16 @@ function GasMapWrapper() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// TRANSACTION DETAIL ROUTER (async decision -> A or B)
+// TRANSACTION DETAIL ROUTER (hook-based example)
 // ═══════════════════════════════════════════════════════════════════════════════
+// Use the hook-based approach when you need access to React context (auth, feature
+// flags, etc.) or have complex state logic that benefits from React's hook system.
 
 function useTransactionDetailDecision(params: { txId: string }) {
+  // Example: You could use hooks here that aren't available in a plain async function
+  // const { user } = useAuth();
+  // const isNewDetailEnabled = useFeatureFlag('new-transaction-detail');
+
   const [state, setState] = useState({
     isLoading: true,
     destination: '',
@@ -152,7 +271,11 @@ function useTransactionDetailDecision(params: { txId: string }) {
   });
 
   useEffect(() => {
+    let cancelled = false;
+
     const timer = setTimeout(() => {
+      if (cancelled) return;
+
       const destination =
         Math.random() > 0.5 ? 'TransactionDetailA' : 'TransactionDetailB';
       setState({
@@ -161,13 +284,19 @@ function useTransactionDetailDecision(params: { txId: string }) {
         destinationParams: { txId: params.txId },
       });
     }, 1000);
-    return () => clearTimeout(timer);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, [params.txId]);
 
   return state;
 }
 
-const TransactionDetailRouter = createRouterScreen(useTransactionDetailDecision);
+const TransactionDetailRouter = createRouterScreenFromHook(
+  useTransactionDetailDecision,
+);
 
 function TransactionDetailAWrapper() {
   const navigation = useNavigation<any>();
@@ -192,24 +321,29 @@ function TransactionDetailBWrapper() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// GAS MAP ROUTER (async decision -> A or B)
+// GAS MAP ROUTER (promise-based example with custom error)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function useGasMapDecision() {
-  const [state, setState] = useState({ isLoading: true, destination: '' });
+// Simulated API call
+async function fetchGasMapType(): Promise<'A' | 'B'> {
+  await new Promise((resolve) => setTimeout(resolve, 1000));
 
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      const destination = Math.random() > 0.5 ? 'GasMapA' : 'GasMapB';
-      setState({ isLoading: false, destination });
-    }, 1000);
-    return () => clearTimeout(timer);
-  }, []);
+  // 20% chance of error for demo
+  if (Math.random() < 0.2) {
+    throw new Error(
+      'Unable to load gas stations. Please check your connection and try again.',
+    );
+  }
 
-  return state;
+  return Math.random() > 0.5 ? 'A' : 'B';
 }
 
-const GasMapRouter = createRouterScreen(useGasMapDecision);
+const GasMapRouter = createRouterScreen(async () => {
+  const type = await fetchGasMapType();
+  return {
+    destination: type === 'A' ? 'GasMapA' : 'GasMapB',
+  };
+});
 
 function GasMapAWrapper() {
   const navigation = useNavigation<any>();

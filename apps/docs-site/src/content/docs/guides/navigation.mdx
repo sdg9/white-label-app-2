@@ -69,21 +69,9 @@ useEffect(() => {
 }, [isAuthenticated]);
 ```
 
-### Supported Deep Links
-
-| Path | Destination |
-|------|-------------|
-| `/wallet` | Wallet tab |
-| `/wallet/transaction/:txId` | Transaction detail |
-| `/activity` | Activity tab |
-| `/card` | Card tab |
-| `/settings` | Settings tab |
-| `/gas-map` | Gas stations modal |
-| `/atm` | ATM locator modal |
-
 ## Async Routing with Router Screens
 
-Sometimes you need to make an async decision (API call, feature flag check, etc.) before knowing which screen to show. The `createRouterScreen` factory enables this pattern.
+Sometimes you need to make an async decision (API call, feature flag check, etc.) before knowing which screen to show. Two factory functions enable this pattern.
 
 ### The Problem
 
@@ -102,23 +90,50 @@ A router screen is a transparent overlay that:
 3. Runs your async decision logic
 4. Calls `replace()` to the actual destination
 
+### Creating a Router (Promise-based)
+
+For most cases, use `createRouterScreen` with an async function. This is simpler and handles loading state, cleanup, and error handling automatically.
+
 ```tsx
-// Factory creates a screen component from a decision hook
-function createRouterScreen<TParams extends object>(
-  useDecision: (params: TParams) => {
-    isLoading: boolean;
-    destination: string;
-    destinationParams?: object;
-  }
-)
+// Simple async function - factory handles the rest
+const CheckoutRouter = createRouterScreen(async ({ cartId }: { cartId: string }) => {
+  const eligibility = await checkEligibility(cartId);
+  return {
+    destination: eligibility.approved ? 'CheckoutForm' : 'CheckoutBlocked',
+    destinationParams: { cartId },
+  };
+});
 ```
 
-### Creating a Router
+**With custom error messages** - throw an Error with your message:
 
-1. **Define your decision hook** - contains the async logic:
+```tsx
+async function fetchGasMapType(): Promise<'A' | 'B'> {
+  const response = await api.getGasStations();
+
+  if (!response.ok) {
+    throw new Error('Unable to load gas stations. Please check your connection.');
+  }
+
+  return response.data.type;
+}
+
+const GasMapRouter = createRouterScreen(async () => {
+  const type = await fetchGasMapType();
+  return { destination: type === 'A' ? 'GasMapA' : 'GasMapB' };
+});
+```
+
+### Creating a Router (Hook-based)
+
+Use `createRouterScreenFromHook` when you need access to React context or complex state logic:
 
 ```tsx
 function useCheckoutDecision(params: { cartId: string }) {
+  // Can use hooks here!
+  const { user } = useAuth();
+  const isNewCheckoutEnabled = useFeatureFlag('new-checkout');
+
   const [state, setState] = useState({
     isLoading: true,
     destination: '',
@@ -126,28 +141,41 @@ function useCheckoutDecision(params: { cartId: string }) {
   });
 
   useEffect(() => {
+    let cancelled = false;
+
     async function decide() {
-      const eligibility = await checkEligibility(params.cartId);
+      const eligibility = await checkEligibility(params.cartId, user.id);
+      if (cancelled) return;
+
       setState({
         isLoading: false,
-        destination: eligibility.approved ? 'CheckoutForm' : 'CheckoutBlocked',
+        destination: eligibility.approved
+          ? (isNewCheckoutEnabled ? 'CheckoutFormV2' : 'CheckoutForm')
+          : 'CheckoutBlocked',
         destinationParams: { cartId: params.cartId },
       });
     }
     decide();
-  }, [params.cartId]);
+
+    return () => { cancelled = true; };
+  }, [params.cartId, user.id, isNewCheckoutEnabled]);
 
   return state;
 }
+
+const CheckoutRouter = createRouterScreenFromHook(useCheckoutDecision);
 ```
 
-2. **Create the router screen**:
+<Aside type="tip" title="When to use each approach">
+| Approach | Use When |
+|----------|----------|
+| `createRouterScreen` (promise) | Simple API calls, no React context needed |
+| `createRouterScreenFromHook` | Need `useAuth()`, `useFeatureFlag()`, or other hooks |
+</Aside>
 
-```tsx
-const CheckoutRouter = createRouterScreen(useCheckoutDecision);
-```
+### Register in your stack
 
-3. **Register in your stack** - use the attached `screenOptions`:
+Use the attached `screenOptions`:
 
 ```tsx
 const MyStack = createNativeStackNavigator({
@@ -195,6 +223,128 @@ The router is always a transparent overlay; only the destination's presentation 
 <Aside type="tip" title="Keep Decision Logic Co-located">
 Define the `useDecision` hook near the feature it serves. This keeps async routing logic with the feature rather than scattered across calling screens.
 </Aside>
+
+### Error Handling
+
+Both factories display an alert when an error occurs, then navigate back.
+
+**Promise-based:** Throw an Error with your custom message:
+
+```tsx
+const MyRouter = createRouterScreen(async (params) => {
+  const result = await api.checkEligibility(params.id);
+
+  if (!result.ok) {
+    throw new Error('Unable to process your request. Please try again.');
+  }
+
+  return { destination: result.screen };
+});
+```
+
+**Hook-based:** Return an `error` field:
+
+```tsx
+function useMyDecision(params) {
+  const [state, setState] = useState({ isLoading: true, destination: '' });
+
+  useEffect(() => {
+    async function decide() {
+      try {
+        const result = await api.checkEligibility(params.id);
+        setState({ isLoading: false, destination: result.screen });
+      } catch (err) {
+        setState({
+          isLoading: false,
+          destination: '',
+          error: 'Unable to process your request. Please try again.',
+        });
+      }
+    }
+    decide();
+  }, [params.id]);
+
+  return state;
+}
+```
+
+**Behavior:**
+
+| Scenario | Result |
+|----------|--------|
+| Success with destination | Navigates to destination screen |
+| Error thrown / error field set | Alert with message, OK → goBack |
+
+<Aside type="note" title="Custom Error Screens">
+For full control over the error experience (custom UI, retry logic, etc.), catch the error and return a destination to your own error screen instead of throwing/returning an error.
+</Aside>
+
+### Caveats
+
+#### Router and Destinations Must Be Siblings
+
+`replace()` only works for screens in the **same navigator**. The router and all its possible destinations must be defined as siblings in the same stack:
+
+```tsx
+// ✅ Works - all in same stack
+const MyStack = createNativeStackNavigator({
+  screens: {
+    CheckoutRouter: { screen: CheckoutRouter, options: CheckoutRouter.screenOptions },
+    CheckoutForm: { screen: CheckoutFormScreen },
+    CheckoutBlocked: { screen: CheckoutBlockedScreen },
+  },
+});
+
+// ❌ Won't work - destination in different navigator
+const StackA = createNativeStackNavigator({
+  screens: { CheckoutRouter: { ... } },
+});
+const StackB = createNativeStackNavigator({
+  screens: { CheckoutForm: { ... } },  // replace() can't reach this
+});
+```
+
+#### Deep Links Bypass the Router
+
+If a user deep links directly to a destination (e.g., `/checkout-form`), it bypasses the router entirely. Depending on your use case, this could be:
+- **Desired** - user already has the context/permissions
+- **Problematic** - user skips required validation
+
+Consider whether destination screens should handle being accessed directly.
+
+#### Cleanup Async Work on Unmount (Hook-based only)
+
+If the user dismisses the router (swipe back, hardware back) while loading, your async logic may still complete and attempt to navigate.
+
+The **promise-based** factory handles this automatically. For **hook-based** routers, handle cleanup manually:
+
+```tsx
+useEffect(() => {
+  let cancelled = false;
+
+  async function decide() {
+    const result = await fetchEligibility();
+    if (!cancelled) {
+      setState({ isLoading: false, destination: result.screen });
+    }
+  }
+  decide();
+
+  return () => { cancelled = true; };
+}, []);
+```
+
+#### Params Must Be Serializable
+
+`destinationParams` passes through React Navigation's state, so values must be serializable. No functions, class instances, or circular references.
+
+```tsx
+// ✅ Good
+{ destinationParams: { userId: '123', amount: 99.99 } }
+
+// ❌ Bad
+{ destinationParams: { onComplete: () => {}, user: new User() } }
+```
 
 ## Tab Navigation
 
