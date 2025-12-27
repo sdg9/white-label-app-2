@@ -141,6 +141,57 @@ function GasMapWrapper() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// TRANSACTION DETAIL ROUTER (async decision -> A or B)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function useTransactionDetailDecision(params: { txId: string }) {
+  const [state, setState] = useState({
+    isLoading: true,
+    destination: '',
+    destinationParams: {} as object,
+  });
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const destination =
+        Math.random() > 0.5 ? 'TransactionDetailA' : 'TransactionDetailB';
+      setState({
+        isLoading: false,
+        destination,
+        destinationParams: { txId: params.txId },
+      });
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [params.txId]);
+
+  return state;
+}
+
+const TransactionDetailRouter = createRouterScreen(useTransactionDetailDecision);
+
+function TransactionDetailAWrapper() {
+  const navigation = useNavigation<any>();
+  const route = useRoute<any>();
+  return (
+    <TransactionDetailScreen
+      txId={route.params?.txId ?? 'unknown'}
+      onBack={() => navigation.goBack()}
+    />
+  );
+}
+
+function TransactionDetailBWrapper() {
+  const navigation = useNavigation<any>();
+  const route = useRoute<any>();
+  return (
+    <TransactionDetailScreen
+      txId={route.params?.txId ?? 'unknown'}
+      onBack={() => navigation.goBack()}
+    />
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // GAS MAP ROUTER (async decision -> A or B)
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -221,11 +272,21 @@ const WalletStack = createNativeStackNavigator({
       linking: 'wallet',
     },
     TransactionDetail: {
-      screen: TransactionDetailWrapper,
-      options: {
-        title: 'Transaction',
-      },
+      screen: TransactionDetailRouter,
+      options: TransactionDetailRouter.screenOptions,
       linking: 'wallet/transaction/:txId',
+    },
+    TransactionDetailA: {
+      screen: TransactionDetailAWrapper,
+      options: {
+        title: 'Transaction A',
+      },
+    },
+    TransactionDetailB: {
+      screen: TransactionDetailBWrapper,
+      options: {
+        title: 'Transaction B',
+      },
     },
   },
 });

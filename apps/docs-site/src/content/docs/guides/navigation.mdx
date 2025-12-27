@@ -81,6 +81,121 @@ useEffect(() => {
 | `/gas-map` | Gas stations modal |
 | `/atm` | ATM locator modal |
 
+## Async Routing with Router Screens
+
+Sometimes you need to make an async decision (API call, feature flag check, etc.) before knowing which screen to show. The `createRouterScreen` factory enables this pattern.
+
+### The Problem
+
+React Navigation's `navigate()` is synchronous. If you need to:
+- Call an API to determine eligibility
+- Check a feature flag
+- Load user preferences
+
+...you'd typically do this in the calling screen, which couples business logic to the wrong location.
+
+### Solution: Router Screens
+
+A router screen is a transparent overlay that:
+1. Appears instantly (no animation)
+2. Shows a loading spinner
+3. Runs your async decision logic
+4. Calls `replace()` to the actual destination
+
+```tsx
+// Factory creates a screen component from a decision hook
+function createRouterScreen<TParams extends object>(
+  useDecision: (params: TParams) => {
+    isLoading: boolean;
+    destination: string;
+    destinationParams?: object;
+  }
+)
+```
+
+### Creating a Router
+
+1. **Define your decision hook** - contains the async logic:
+
+```tsx
+function useCheckoutDecision(params: { cartId: string }) {
+  const [state, setState] = useState({
+    isLoading: true,
+    destination: '',
+    destinationParams: {}
+  });
+
+  useEffect(() => {
+    async function decide() {
+      const eligibility = await checkEligibility(params.cartId);
+      setState({
+        isLoading: false,
+        destination: eligibility.approved ? 'CheckoutForm' : 'CheckoutBlocked',
+        destinationParams: { cartId: params.cartId },
+      });
+    }
+    decide();
+  }, [params.cartId]);
+
+  return state;
+}
+```
+
+2. **Create the router screen**:
+
+```tsx
+const CheckoutRouter = createRouterScreen(useCheckoutDecision);
+```
+
+3. **Register in your stack** - use the attached `screenOptions`:
+
+```tsx
+const MyStack = createNativeStackNavigator({
+  screens: {
+    // Entry point - transparent overlay, no animation
+    Checkout: {
+      screen: CheckoutRouter,
+      options: CheckoutRouter.screenOptions,
+    },
+    // Destinations - normal screens
+    CheckoutForm: {
+      screen: CheckoutFormScreen,
+      options: { title: 'Checkout' },
+    },
+    CheckoutBlocked: {
+      screen: CheckoutBlockedScreen,
+      options: { title: 'Not Available' },
+    },
+  },
+});
+```
+
+### Screen Options
+
+The factory attaches recommended options as a static property:
+
+```tsx
+Screen.screenOptions = {
+  presentation: 'transparentModal',  // Overlay, don't push
+  headerShown: false,                // No header during loading
+  animation: 'none',                 // Appear instantly
+};
+```
+
+This ensures the router overlays the current screen transparently, then the destination animates in normally (modal slide-up or stack push).
+
+### Works for Both Modals and Stack Pushes
+
+The pattern works identically whether your destination is:
+- A modal (`presentation: 'modal'`)
+- A regular stack screen (default push animation)
+
+The router is always a transparent overlay; only the destination's presentation matters.
+
+<Aside type="tip" title="Keep Decision Logic Co-located">
+Define the `useDecision` hook near the feature it serves. This keeps async routing logic with the feature rather than scattered across calling screens.
+</Aside>
+
 ## Tab Navigation
 
 TODO: Document bottom tab structure.
