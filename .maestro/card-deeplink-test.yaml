@@ -1,0 +1,46 @@
+# Card Deeplink Test: Validate deep link navigation after login
+#
+# This test validates:
+# - Card deep link (appuber://card) stores the pending URL when not logged in
+# - After login, user is navigated to the Card tab
+#
+# Prerequisites:
+#   1. iOS simulator booted (e.g., iPhone 16)
+#   2. Target app installed and running
+#   3. Metro bundler connected
+#
+# Run:
+#   maestro test .maestro/card-deeplink-test.yaml
+
+appId: com.steveng9.app-uber
+
+---
+# Step 1: Launch the app with cleared state to ensure we're logged out
+- launchApp:
+    clearState: true
+
+# Step 2: Wait for the login screen to appear
+- extendedWaitUntil:
+    visible:
+      text: 'Login'
+    timeout: 10000
+
+# Step 3: Open the card deep link while logged out
+# This should store the URL for replay after login
+- openLink: appuber://card
+
+# Step 4: We should still be on the login screen (not navigated yet)
+- assertVisible: 'Login'
+
+# Step 5: Sign in
+- tapOn: 'Sign In (Mock)'
+
+# Step 6: Wait for the Card screen to appear (deep link should replay after auth)
+- extendedWaitUntil:
+    visible:
+      text: 'Card'
+    timeout: 15000
+
+# Step 7: Assert we're on the Card screen (not the default Wallet tab)
+- assertVisible: 'Card'
+- assertVisible: 'Your virtual Uber Pro Card'
